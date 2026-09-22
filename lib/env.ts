@@ -100,8 +100,8 @@ export const serverEnvSchema = z.object({
   NEXTAUTH_URL: z.string().url(),
   NEXTAUTH_SECRET: z.string().min(16),
   DATABASE_URL: z.string().min(1),
-  REDIS_URL: z.string().min(1),
   ENCRYPTION_KEY: z.string().regex(HEX_32_BYTE),
+  OPENREPLY_WORKER_SECRET: z.string().min(16).optional(),
 });
 
 export function validateCoreEnv() {

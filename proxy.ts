@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { createClient } from "@/utils/supabase/middleware";
 
 const PROTECTED_PREFIXES = ["/dashboard", "/automations", "/logs", "/settings"];
 
@@ -7,11 +8,16 @@ function hasSessionCookie(request: NextRequest): boolean {
     request.cookies.has("authjs.session-token") ||
     request.cookies.has("__Secure-authjs.session-token") ||
     request.cookies.has("next-auth.session-token") ||
-    request.cookies.has("__Secure-next-auth.session-token")
+    request.cookies.has("__Secure-next-auth.session-token") ||
+    request.cookies.has("sb-access-token") ||
+    request.cookies.has("sb-refresh-token")
   );
 }
 
 export function proxy(request: NextRequest) {
+  // Refresh Supabase session
+  const { supabaseResponse } = createClient(request);
+
   const pathname = request.nextUrl.pathname;
   const isProtected = PROTECTED_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
@@ -29,7 +35,7 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
-  return NextResponse.next();
+  return supabaseResponse;
 }
 
 export const config = {

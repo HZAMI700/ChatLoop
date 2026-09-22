@@ -1,6 +1,6 @@
 # Setup
 
-Get OpenReply running end to end: choose your Instagram connection, deploy the web app and worker, configure the databases, and test a campaign. OpenReply is self-hosted with either provider.
+Get OpenReply running end to end: choose your Instagram connection, deploy the web app, configure Supabase, and test a campaign. OpenReply is self-hosted with either provider.
 
 If you use a coding assistant, start with [Set it up with an AI assistant](#set-it-up-with-an-ai-assistant). Its first decision is your provider, before any Meta app secrets.
 
@@ -11,98 +11,75 @@ If you use a coding assistant, start with [Set it up with an AI assistant](#set-
 | **[Zernio](zernio.md), recommended for simpler connection setup** | A Zernio API key in Settings, a profile, and an Instagram account. OpenReply registers the webhook. No own Meta app or Meta secrets required. | Optional paid provider, plus your hosting. Zernio sponsors OpenReply. |
 | **[Your own Meta app](#the-meta-app)** | Your Meta app, Instagram Login, app secrets, webhook, and App Review where required. | Your hosting and any other services you use. No Zernio subscription. |
 
-Both use the official Instagram API and remain subject to Instagram’s policies, account requirements, permissions, rate limits, and messaging windows. Both need PostgreSQL, Redis, email delivery, and a running worker. Existing connections are not migrated automatically.
+Both use the official Instagram API and remain subject to Instagram's policies, account requirements, permissions, rate limits, and messaging windows. Both need Supabase PostgreSQL and email delivery. Existing connections are not migrated automatically.
 
 Learn about the optional sponsor at [Zernio](https://zernio.com/?utm_source=openreply&utm_medium=sponsorship&utm_campaign=openreply-integration&utm_content=setup-provider). Check the [provider guide and feature limits](zernio.md) before choosing.
 
 ## How it is built
 
-OpenReply is two processes and two datastores.
+OpenReply is one deployment and one datastore.
 
-- Web app and API: Next.js. Serves the dashboard, the OAuth callback, and the incoming webhook. Runs well on Vercel.
-- Worker: a long-running Node process (`npm run worker`) that consumes the send queue and runs the polling reconciler. It cannot run on Vercel, because serverless functions are short-lived and a queue consumer has to stay up. Railway, Render, Fly, or any always-on box works.
-- PostgreSQL: campaigns, logs, accounts, sessions.
-- Redis: the BullMQ send queue and the per-account rate limiter.
+- Web app, API, and worker: Next.js on Vercel. Serves the dashboard, the OAuth callback, the incoming webhook, and the background worker endpoints. Supabase pg_cron triggers the worker endpoints every minute.
+- Supabase PostgreSQL: campaigns, logs, accounts, sessions, durable job queue (pgmq), rate limiting, and heartbeats.
 
-The web app and the worker must share the same `DATABASE_URL`, the same `REDIS_URL`, and the same `ENCRYPTION_KEY`. The web app writes an encrypted Instagram token; the worker decrypts it to send. Different keys mean every send fails to decrypt.
+The web app and the worker endpoints share the same `DATABASE_URL` and `ENCRYPTION_KEY`. The web app writes an encrypted Instagram token; the worker endpoints decrypt it to send. Different keys mean every send fails to decrypt.
 
 ## What you need first
 
 - **Direct Meta only:** a Facebook account for Meta developer registration. Zernio users skip the own-app setup.
 - An Instagram Business or Creator account. A personal account cannot be connected. Switch it in the Instagram app under Settings, Account type, if needed.
 - A [Resend](https://resend.com) account for login emails, with a verified sender domain. Login is email magic links only, so without this nobody can sign in. If you already run your own mail server, you can point `EMAIL_SERVER` at it instead and skip Resend entirely — see the [environment variables](#environment-variables) table.
-- Somewhere to host. The recommended setup, used throughout this guide, is Vercel for the web app and Railway for the worker plus Postgres and Redis. Check hosting costs for your usage; the always-on worker needs a suitable service plan.
+- Somewhere to host. The recommended setup is Vercel for the web app and Supabase for the database. Both have generous free tiers.
 
 ## Hosting and your domain
 
 You do not need to buy a domain. Deploying the web app to Vercel gives you a free public URL like `your-app.vercel.app`, and that URL is what everything else points at: `NEXTAUTH_URL`, provider callbacks and incoming webhooks use it. If you want a custom domain later you can add one, but it is optional and you can launch without it.
 
-Recommended split:
+Recommended setup:
 
-- Web app: Vercel. You get `your-app.vercel.app` for free on deploy.
-- Worker, Postgres, Redis: Railway.
+- Web app + worker: Vercel. You get `your-app.vercel.app` for free on deploy.
+- PostgreSQL + queue + cron: Supabase.
 
-Do Railway first, because Vercel needs the database URLs from it.
+Do Supabase first, because Vercel needs the database URL from it.
 
-### Step 1: Railway (Postgres, Redis, worker)
+### Step 1: Supabase (PostgreSQL + queue + cron)
 
-1. Create a Railway account and a New Project.
-2. In the project, click New, then Database, then Add PostgreSQL.
-3. Click New, then Database, then Add Redis.
-4. Add the worker: click New, then GitHub Repo, and select your fork of this repo. Railway detects the Node app.
-5. Open the worker service's Settings and set the Build Command and Start Command:
-   ```
-   Build Command:  npm run db:generate
-   Start Command:  npm run worker
-   ```
-   The worker only needs the generated Prisma client, not `next build`. Do not leave the build as the default `npm run build`: it runs `next build` needlessly, and any build step that reaches the database (like `prisma migrate deploy`) fails here, because the worker cannot connect to Postgres at build time. Migrations are applied by the web app's `vercel-build` (Step 3) and by the manual `db:migrate` below, never by the worker.
-6. Open the worker service's Variables and add the shared environment variables and any variables required by your chosen provider from the [table below](#environment-variables). For the worker, use Railway's internal database and Redis hostnames (they look like `postgres.railway.internal` and `redis.railway.internal`); inside Railway's network they are faster and free of egress. `NEXTAUTH_URL` is your Vercel domain. `ENCRYPTION_KEY` must be the exact same value you will use on Vercel.
-
-Getting the connection URLs. Open the Postgres service, then its Variables or Connect tab. You will see two URLs:
-
-| Variable | Host | Use it for |
-| --- | --- | --- |
-| `DATABASE_URL` | `postgres.railway.internal` | the Railway worker only |
-| `DATABASE_PUBLIC_URL` | `*.proxy.rlwy.net` | Vercel, and running migrations from your machine |
-
-Redis is the same: `REDIS_URL` (internal) for the worker, `REDIS_PUBLIC_URL` (public proxy) for Vercel.
-
-Vercel runs outside Railway's private network, so if you give Vercel an internal `*.railway.internal` URL it will hang and time out. Always give Vercel the public URLs.
+1. Create a [Supabase](https://supabase.com) account and a new project.
+2. In the SQL Editor, run the setup script at `scripts/supabase-cron-setup.sql` from your repo. This enables pgmq, pg_cron, and pg_net, creates the job queue, and schedules the cron jobs that trigger the Vercel worker endpoints. Before running it, replace `YOUR_VERCEL_URL` and `YOUR_WORKER_SECRET` in the SQL with your actual values.
+3. Copy the connection string from Settings → Database → Connection string (URI). Use this as your `DATABASE_URL`.
 
 ### Step 2: Migrate the production database
 
 Run once from your machine, using the public Postgres URL:
 
 ```bash
-DATABASE_URL="postgresql://...proxy.rlwy.net.../railway" npm run db:migrate
+DATABASE_URL="postgresql://...supabase.co.../postgres" npm run db:migrate
 ```
 
 ### Step 3: Vercel (web app, and your domain)
 
 1. Create a Vercel account and Add New Project, importing your fork. It auto-detects Next.js.
-2. Under the project's Settings, then Environment Variables, add the shared environment variables and your provider’s variables from the [table below](#environment-variables). Use these values:
+2. Under the project's Settings, then Environment Variables, add the shared environment variables and your provider's variables from the [table below](#environment-variables). Use these values:
    - `NEXTAUTH_URL`: your Vercel domain, for example `https://your-app.vercel.app`. This is the free domain Vercel assigns on deploy.
-   - `DATABASE_URL` and `REDIS_URL`: the public Railway URLs (`DATABASE_PUBLIC_URL` and `REDIS_PUBLIC_URL` from Railway).
-   - `ENCRYPTION_KEY`: the exact same value as on the worker.
+   - `DATABASE_URL`: the Supabase connection string from Step 1.
+   - `OPENREPLY_WORKER_SECRET`: the same secret you used in the Supabase cron setup SQL.
 3. Deploy. The build runs `prisma generate` before `next build`, so the Prisma client is generated even though it is gitignored.
-4. The daily token-refresh cron is wired up in `vercel.json`.
+4. Background jobs (queue processing, comment reconciliation, token refresh, follower snapshots) are triggered by Supabase pg_cron, not Vercel crons.
 
-Note on crons: Vercel's free plan allows each cron to run at most once per day. The repo's crons are set to daily for that reason. The comment polling reconciler does not use a Vercel cron; it runs inside the Railway worker on its own interval, so the free plan is not a constraint there.
-
-Optional custom domain: if you want `openreply.yoursite.com` instead of the Vercel URL, add it in Vercel under Domains and make it primary. Then update `NEXTAUTH_URL` and the two Meta URLs (Step 7 and Step 8 below) to the new domain, and update the worker's `NEXTAUTH_URL` too, or tracked links in DMs will point at the old domain.
+Optional custom domain: if you want `openreply.yoursite.com` instead of the Vercel URL, add it in Vercel under Domains and make it primary. Then update `NEXTAUTH_URL` and the two Meta URLs (Step 7 and Step 8 below) to the new domain, and update the cron job URLs in Supabase too.
 
 ## Environment variables
 
-Copy `.env.example` to `.env` for local work, or set these in Vercel and Railway for hosting. Zernio credentials are saved in Settings, not environment variables. The Meta variables in the second table are only for direct Meta connections.
+Copy `.env.example` to `.env` for local work, or set these in Vercel for hosting. Zernio credentials are saved in Settings, not environment variables. The Meta variables in the second table are only for direct Meta connections.
 
 | Variable | What it is |
 | --- | --- |
 | `NEXTAUTH_URL` | Your public URL. Your Vercel domain in production, your tunnel URL locally. |
 | `NEXTAUTH_SECRET` | Random secret. `openssl rand -base64 32` |
 | `CRON_SECRET` | Random secret protecting the token-refresh cron. |
-| `ENCRYPTION_KEY` | 32-byte hex. `openssl rand -hex 32`. Encrypts provider credentials and Instagram tokens. Identical across web and worker. |
-| `DATABASE_URL` | PostgreSQL connection string. Public Railway URL on Vercel; internal on the worker. |
-| `REDIS_URL` | Redis connection string. Must support blocking commands, so an HTTP-only Redis will not work with BullMQ. |
+| `ENCRYPTION_KEY` | 32-byte hex. `openssl rand -hex 32`. Encrypts provider credentials and Instagram tokens. |
+| `DATABASE_URL` | Supabase PostgreSQL connection string. |
+| `OPENREPLY_WORKER_SECRET` | Random secret protecting the internal worker endpoints. `openssl rand -base64 32` |
 | `RESEND_API_KEY` | Resend key. Login is email magic links only, so without this nobody can sign in. |
 | `EMAIL_FROM` | A sender on a domain you verified in Resend. The placeholder will not deliver. |
 | `ALLOWED_EMAILS` | Optional. Comma-separated allowlist of addresses that may sign in, case insensitive. Unset, anyone who reaches your public URL can request a magic link and gets their own workspace, which is worth closing on an instance you run for yourself. |

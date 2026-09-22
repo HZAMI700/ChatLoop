@@ -411,8 +411,68 @@ model ZernioConnection {
   workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 }
 
-// Claims persist independently of BullMQ retention so old taps never resend.
+// Claims persist independently of queue retention so old taps never resend.
 model PostbackDelivery {
-  id String @id
+  id        String   @id
   createdAt DateTime @default(now())
+}
+
+model InstagramRateLimitWindow {
+  id                 String   @id @default(cuid())
+  instagramAccountId String
+  windowStart        DateTime
+  count              Int      @default(0)
+  updatedAt          DateTime @updatedAt
+
+  @@unique([instagramAccountId, windowStart])
+  @@index([instagramAccountId, windowStart])
+}
+
+model QueueJobState {
+  id                 String    @id
+  queueName          String    @default("instagram_dm_queue")
+  jobType            String
+  status             JobStatus @default(QUEUED)
+  attempts           Int       @default(0)
+  maxAttempts        Int       @default(3)
+  lastError          String?
+  nextAttemptAt      DateTime  @default(now())
+  lockedAt           DateTime?
+  lockedBy           String?
+  completedAt        DateTime?
+  failedAt           DateTime?
+  payload            Json
+  workspaceId        String?
+  instagramAccountId String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([workspaceId])
+  @@index([instagramAccountId])
+}
+
+enum JobStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+  DEAD_LETTER
+}
+
+model ProcessorHeartbeat {
+  id            String    @id @default("default")
+  status        String    @default("ok")
+  lastRunAt     DateTime  @default(now())
+  lastSuccessAt DateTime?
+  jobsProcessed Int       @default(0)
+  lastError     String?
+  updatedAt     DateTime  @updatedAt
+}
+
+model SchedulerHeartbeat {
+  id            String    @id @default("default")
+  lastRunAt     DateTime  @default(now())
+  lastCronName  String?
+  updatedAt     DateTime  @updatedAt
 }

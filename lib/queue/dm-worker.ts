@@ -1,8 +1,6 @@
 import { createHash } from "node:crypto";
-import { UnrecoverableError, Worker, type Job } from "bullmq";
 import {
   getDMQueue,
-  getRedisConnection,
   MESSAGE_JOB_NAME,
   POSTBACK_JOB_NAME,
   FOLLOWUP_JOB_NAME,
@@ -12,6 +10,17 @@ import {
   type ProcessPostbackJob,
   type ProcessFollowUpJob,
 } from "./client";
+
+export class UnrecoverableError extends Error {
+  name = "UnrecoverableError";
+}
+
+export type Job<T = DmQueueJob> = {
+  id?: string;
+  name?: string;
+  data: T;
+  attemptsMade: number;
+};
 import { prisma } from "@/lib/db/client";
 import {
   MetaApiError,
@@ -50,7 +59,22 @@ import {
   ZernioDeliveryUnconfirmedError,
 } from "@/lib/zernio/client";
 
-const BACKOFF_DELAYS = [5 * 60 * 1000, 15 * 60 * 1000, 45 * 60 * 1000];
+export const BACKOFF_DELAYS = [5 * 60 * 1000, 15 * 60 * 1000, 45 * 60 * 1000];
+
+export function isRetryableError(error: unknown): boolean {
+  if (
+    error instanceof TokenExpiredError ||
+    error instanceof ZernioDeliveryUnconfirmedError ||
+    (error instanceof ZernioApiError && error.code < 500)
+  ) {
+    return false;
+  }
+  const message = error instanceof Error ? error.message : "";
+  if (NON_TEMPLATE_REJECTIONS.some((pattern) => pattern.test(message))) {
+    return false;
+  }
+  return true;
+}
 
 function formatError(error: unknown): string {
   if (error instanceof MetaApiError) {
@@ -1368,7 +1392,7 @@ async function processMessage(job: Job<ProcessMessageJob>): Promise<void> {
   }
 }
 
-async function dispatchJob(job: Job<DmQueueJob>): Promise<void> {
+export async function dispatchJob(job: Job<DmQueueJob>): Promise<void> {
   if (job.name === POSTBACK_JOB_NAME) {
     return processPostback(job as Job<ProcessPostbackJob>);
   }
@@ -1381,17 +1405,18 @@ async function dispatchJob(job: Job<DmQueueJob>): Promise<void> {
   return processComment(job as Job<ProcessCommentJob>);
 }
 
-async function processJob(job: Job<DmQueueJob>): Promise<void> {
+export async function processJob(job: Job<DmQueueJob>): Promise<void> {
   try {
     await dispatchJob(job);
   } catch (error) {
-    if (error instanceof ZernioDeliveryUnconfirmedError)
+    if (error instanceof ZernioDeliveryUnconfirmedError) {
       throw new UnrecoverableError(error.message);
+    }
     throw error;
   }
 }
 
-async function recordWorkerFailure(
+export async function recordWorkerFailure(
   job: Job<DmQueueJob> | undefined,
   error: Error
 ) {
@@ -1436,46 +1461,11 @@ async function recordWorkerFailure(
   }
 }
 
-export function createDMWorker(): Worker<DmQueueJob> {
-  const worker = new Worker<DmQueueJob>("dm-processing", processJob, {
-    connection: getRedisConnection(),
-    concurrency: 5,
-    settings: {
-      backoffStrategy: (attemptsMade: number) =>
-        BACKOFF_DELAYS[Math.min(attemptsMade - 1, BACKOFF_DELAYS.length - 1)],
-    },
-  });
-
-  worker.on("completed", (job) => {
-    console.log(`[DM Worker] Job ${job.id} completed`);
-  });
-
-  worker.on("failed", (job, err) => {
-    console.error(
-      `[DM Worker] Job ${job?.id} failed (attempt ${job?.attemptsMade}):`,
-      err.message
-    );
-    void recordWorkerFailure(job, err);
-  });
-
-  worker.on("error", (err) => {
-    console.error("[DM Worker] Worker error:", err.message);
-    void prisma.operationalEvent
-      .create({
-        data: {
-          source: "WORKER",
-          level: "ERROR",
-          message: `DM worker process error: ${err.message}`,
-          payload: { name: err.name },
-        },
-      })
-      .catch((recordError) => {
-        console.error(
-          "[DM Worker] Failed to record worker process error:",
-          formatError(recordError)
-        );
-      });
-  });
-
-  return worker;
+export function createDMWorker() {
+  const globalObj = globalThis as unknown as Record<string, unknown>;
+  globalObj.__dmWorkerProcessor = processJob;
+  return {
+    on: () => {},
+    close: async () => {},
+  };
 }

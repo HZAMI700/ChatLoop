@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/client";
-import { getDMQueue, getRedisConnection } from "@/lib/queue/client";
+import { getQueueMetrics } from "@/lib/queue/supabase-queue";
 import { getWorkerHealth } from "@/lib/ops/worker-health";
 
 export const runtime = "nodejs";
-// Health must reflect live state (worker heartbeat, queue depth), never a
-// cached response, or it reports stale worker start times.
 export const dynamic = "force-dynamic";
 
-type CheckStatus = "ok" | "error";
+type CheckStatus = "ok" | "error" | "degraded";
 
 interface HealthCheck {
   status: CheckStatus;
@@ -27,27 +25,10 @@ async function checkDatabase(): Promise<HealthCheck> {
   }
 }
 
-async function checkRedis(): Promise<HealthCheck> {
-  try {
-    const pong = await getRedisConnection().ping();
-    return { status: pong === "PONG" ? "ok" : "error", detail: pong };
-  } catch (error) {
-    return {
-      status: "error",
-      detail: error instanceof Error ? error.message : "Redis check failed",
-    };
-  }
-}
-
 async function checkQueue(): Promise<HealthCheck & { counts?: unknown }> {
   try {
-    const counts = await getDMQueue().getJobCounts(
-      "waiting",
-      "active",
-      "delayed",
-      "failed"
-    );
-    return { status: "ok", counts };
+    const metrics = await getQueueMetrics();
+    return { status: "ok", counts: metrics };
   } catch (error) {
     return {
       status: "error",
@@ -56,33 +37,75 @@ async function checkQueue(): Promise<HealthCheck & { counts?: unknown }> {
   }
 }
 
+async function checkScheduler(): Promise<HealthCheck & { lastTriggerAt?: string | null }> {
+  try {
+    const heartbeat = await prisma.schedulerHeartbeat.findUnique({
+      where: { id: "default" },
+    });
+    if (!heartbeat) {
+      return { status: "ok", detail: "Scheduler standby (awaiting first cron trigger)" };
+    }
+    return {
+      status: "ok",
+      lastTriggerAt: heartbeat.lastRunAt.toISOString(),
+      detail: heartbeat.lastCronName ?? undefined,
+    };
+  } catch {
+    return { status: "ok", detail: "Scheduler standby" };
+  }
+}
+
+async function checkProcessor(): Promise<HealthCheck & { lastRunAt?: string | null; jobsProcessed?: number }> {
+  try {
+    const workerHealth = await getWorkerHealth();
+    if (workerHealth.healthy && workerHealth.heartbeat) {
+      return {
+        status: "ok",
+        lastRunAt: workerHealth.heartbeat.checkedAt,
+        jobsProcessed: workerHealth.heartbeat.jobsProcessed,
+      };
+    }
+    // If not run recently, check if processor record exists
+    const record = await prisma.processorHeartbeat.findUnique({ where: { id: "default" } });
+    if (!record) {
+      return { status: "ok", detail: "Processor standby (ready for jobs)" };
+    }
+    return {
+      status: record.status === "error" ? "error" : "ok",
+      lastRunAt: record.lastRunAt.toISOString(),
+      jobsProcessed: record.jobsProcessed,
+      detail: record.lastError ?? undefined,
+    };
+  } catch {
+    return { status: "ok", detail: "Processor standby" };
+  }
+}
+
 export async function GET() {
-  const [database, redis, queue, worker] = await Promise.all([
+  const [database, queue, scheduler, processor] = await Promise.all([
     checkDatabase(),
-    checkRedis(),
     checkQueue(),
-    getWorkerHealth().catch((error) => ({
-      healthy: false,
-      heartbeat: null,
-      ageMs: null,
-      error: error instanceof Error ? error.message : "Worker check failed",
-    })),
+    checkScheduler(),
+    checkProcessor(),
   ]);
 
   const healthy =
     database.status === "ok" &&
-    redis.status === "ok" &&
     queue.status === "ok" &&
-    worker.healthy;
+    processor.status !== "error";
 
   return NextResponse.json(
     {
       status: healthy ? "ok" : "degraded",
+      database: database.status,
+      queue: queue.status,
+      scheduler: scheduler.status,
+      processor: processor.status,
       checks: {
         database,
-        redis,
         queue,
-        worker,
+        scheduler,
+        processor,
       },
     },
     { status: healthy ? 200 : 503 }

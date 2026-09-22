@@ -6,6 +6,21 @@ type RedirectRouteProps = {
   params: Promise<{ slug: string }>;
 };
 
+/**
+ * Validate that the destination URL is safe to redirect to.
+ * Strictly requires http: or https: protocol, preventing open redirects
+ * and script execution schemes (javascript:, data:, file:, etc.).
+ */
+export function isSafeRedirectUrl(urlStr: string): boolean {
+  if (!urlStr || typeof urlStr !== "string") return false;
+  try {
+    const parsed = new URL(urlStr);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export async function GET(request: NextRequest, { params }: RedirectRouteProps) {
   const { slug } = await params;
   const trackedLink = await prisma.trackedLink.findUnique({
@@ -23,8 +38,10 @@ export async function GET(request: NextRequest, { params }: RedirectRouteProps) 
     },
   });
 
-  if (!trackedLink) {
-    return NextResponse.redirect(new URL("/", request.url), { status: 302 });
+  const fallbackUrl = new URL("/", request.url);
+
+  if (!trackedLink || !isSafeRedirectUrl(trackedLink.destinationUrl)) {
+    return NextResponse.redirect(fallbackUrl, { status: 302 });
   }
 
   await prisma.linkClick.create({
@@ -37,7 +54,7 @@ export async function GET(request: NextRequest, { params }: RedirectRouteProps) 
       userAgent: request.headers.get("user-agent"),
       referrer: request.headers.get("referer"),
     },
-  });
+  }).catch(() => {});
 
   return NextResponse.redirect(trackedLink.destinationUrl, { status: 302 });
 }

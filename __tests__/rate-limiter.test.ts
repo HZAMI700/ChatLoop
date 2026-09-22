@@ -1,39 +1,42 @@
 /**
  * Rate Limiter — Unit Tests
  *
- * Tests the hourly private-reply cap enforcement using mocked Redis.
+ * Tests the hourly private-reply cap enforcement using PostgreSQL / Prisma mocks.
  * Assertions derive from RATE_LIMIT_MAX so they survive a change to the cap.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockGet, mockEval, mockDel, mockDecr } = vi.hoisted(() => ({
-  mockGet: vi.fn(),
-  mockEval: vi.fn(),
-  mockDel: vi.fn(),
-  mockDecr: vi.fn(),
-}));
-
-vi.mock("ioredis", () => {
-  const MockRedis = vi.fn().mockImplementation(function (
-    this: Record<string, unknown>
-  ) {
-    this.get = mockGet;
-    this.eval = mockEval;
-    this.del = mockDel;
-    this.decr = mockDecr;
-    return this;
-  });
-  return { default: MockRedis };
+const { mockQueryRaw, mockTransaction, mockInstagramRateLimitWindow } = vi.hoisted(() => {
+  const mockInstagramRateLimitWindow = {
+    findUnique: vi.fn(),
+    upsert: vi.fn(),
+    update: vi.fn(),
+    deleteMany: vi.fn(),
+  };
+  return {
+    mockQueryRaw: vi.fn(),
+    mockTransaction: vi.fn(async (callback: (tx: unknown) => unknown) => {
+      return callback({ instagramRateLimitWindow: mockInstagramRateLimitWindow });
+    }),
+    mockInstagramRateLimitWindow,
+  };
 });
 
-vi.stubEnv("REDIS_URL", "redis://localhost:6379");
+vi.mock("@/lib/db/client", () => ({
+  prisma: {
+    $queryRaw: mockQueryRaw,
+    $transaction: mockTransaction,
+    instagramRateLimitWindow: mockInstagramRateLimitWindow,
+  },
+}));
 
 import {
   checkRateLimit,
   incrementDMCounter,
   reserveDMSlot,
   releaseDMSlot,
+  resetRateLimit,
   RATE_LIMIT_MAX,
 } from "../lib/utils/rate-limiter";
 
@@ -43,7 +46,7 @@ beforeEach(() => {
 
 describe("checkRateLimit", () => {
   it("should allow when count is below limit", async () => {
-    mockGet.mockResolvedValue("50");
+    mockInstagramRateLimitWindow.findUnique.mockResolvedValue({ count: 50 });
 
     const result = await checkRateLimit("account_123");
 
@@ -56,7 +59,7 @@ describe("checkRateLimit", () => {
   });
 
   it("should allow when no previous count exists", async () => {
-    mockGet.mockResolvedValue(null);
+    mockInstagramRateLimitWindow.findUnique.mockResolvedValue(null);
 
     const result = await checkRateLimit("account_123");
 
@@ -66,7 +69,7 @@ describe("checkRateLimit", () => {
   });
 
   it("should deny when count reaches the limit", async () => {
-    mockGet.mockResolvedValue(String(RATE_LIMIT_MAX));
+    mockInstagramRateLimitWindow.findUnique.mockResolvedValue({ count: RATE_LIMIT_MAX });
 
     const result = await checkRateLimit("account_123");
 
@@ -76,7 +79,7 @@ describe("checkRateLimit", () => {
   });
 
   it("should skip after max requeue attempts", async () => {
-    mockGet.mockResolvedValue(String(RATE_LIMIT_MAX));
+    mockInstagramRateLimitWindow.findUnique.mockResolvedValue({ count: RATE_LIMIT_MAX });
 
     const result = await checkRateLimit("account_123", 3);
 
@@ -88,25 +91,20 @@ describe("checkRateLimit", () => {
 
 describe("reserveDMSlot", () => {
   it("should atomically reserve a slot when below the hourly cap", async () => {
-    mockEval.mockResolvedValue([1, 51, 139]);
+    mockQueryRaw.mockResolvedValue([{ count: 51 }]);
 
     const result = await reserveDMSlot("account_123");
 
-    expect(mockEval).toHaveBeenCalledWith(
-      expect.any(String),
-      1,
-      "rate:dm:account_123",
-      RATE_LIMIT_MAX,
-      3600
-    );
+    expect(mockQueryRaw).toHaveBeenCalled();
     expect(result.allowed).toBe(true);
     expect(result.reserved).toBe(true);
     expect(result.currentCount).toBe(51);
-    expect(result.remainingDMs).toBe(139);
+    expect(result.remainingDMs).toBe(RATE_LIMIT_MAX - 51);
   });
 
   it("should recommend requeue when the atomic reserve is denied", async () => {
-    mockEval.mockResolvedValue([0, RATE_LIMIT_MAX, 0]);
+    mockQueryRaw.mockResolvedValue([]);
+    mockInstagramRateLimitWindow.findUnique.mockResolvedValue({ count: RATE_LIMIT_MAX });
 
     const result = await reserveDMSlot("account_123", 0);
 
@@ -117,7 +115,8 @@ describe("reserveDMSlot", () => {
   });
 
   it("should skip after max requeue attempts", async () => {
-    mockEval.mockResolvedValue(["0", String(RATE_LIMIT_MAX), "0"]);
+    mockQueryRaw.mockResolvedValue([]);
+    mockInstagramRateLimitWindow.findUnique.mockResolvedValue({ count: RATE_LIMIT_MAX });
 
     const result = await reserveDMSlot("account_123", 3);
 
@@ -129,31 +128,32 @@ describe("reserveDMSlot", () => {
 
 describe("incrementDMCounter", () => {
   it("should use the atomic reservation path", async () => {
-    mockEval.mockResolvedValue([1, 51, 139]);
+    mockQueryRaw.mockResolvedValue([{ count: 51 }]);
 
     const count = await incrementDMCounter("account_123");
 
-    expect(mockEval).toHaveBeenCalled();
+    expect(mockQueryRaw).toHaveBeenCalled();
     expect(count).toBe(51);
   });
 });
 
 describe("releaseDMSlot", () => {
   it("hands a reserved slot back and returns the new count", async () => {
-    mockDecr.mockResolvedValue(49);
+    mockQueryRaw.mockResolvedValue([{ count: 49 }]);
 
     const count = await releaseDMSlot("account_123");
 
-    expect(mockDecr).toHaveBeenCalledWith("rate:dm:account_123");
+    expect(mockQueryRaw).toHaveBeenCalled();
     expect(count).toBe(49);
   });
+});
 
-  it("clamps to zero and clears the key when nothing was reserved", async () => {
-    mockDecr.mockResolvedValue(-1);
+describe("resetRateLimit", () => {
+  it("clears rate limit window for account", async () => {
+    mockInstagramRateLimitWindow.deleteMany.mockResolvedValue({ count: 1 });
 
-    const count = await releaseDMSlot("account_123");
+    await resetRateLimit("account_123");
 
-    expect(count).toBe(0);
-    expect(mockDel).toHaveBeenCalledWith("rate:dm:account_123");
+    expect(mockInstagramRateLimitWindow.deleteMany).toHaveBeenCalled();
   });
 });

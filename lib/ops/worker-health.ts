@@ -1,16 +1,23 @@
-import { getRedisConnection } from "@/lib/queue/client";
+/**
+ * Worker / Processor Health System
+ *
+ * PostgreSQL-based health monitoring for the Vercel queue processor
+ * and Supabase Cron scheduler. Replaces Redis health keys.
+ */
 
-const WORKER_HEALTH_KEY = "health:worker:dm";
-const WORKER_ALERTS_KEY = "alerts:worker:dm";
-const WORKER_HEARTBEAT_TTL_SECONDS = 120;
+import { prisma } from "@/lib/db/client";
+
+// Maximum age before the processor is considered degraded / stalled (10 minutes)
+const PROCESSOR_HEALTHY_TTL_SECONDS = 600;
 
 export interface WorkerHeartbeat {
-  status: "running";
+  status: "running" | "idle" | "ok";
   worker: "dm";
-  pid: number;
+  pid?: number;
   hostname?: string;
   startedAt?: string;
   checkedAt: string;
+  jobsProcessed?: number;
 }
 
 export interface WorkerHealth {
@@ -28,69 +35,102 @@ export interface WorkerAlert {
   createdAt: string;
 }
 
-function parseJson<T>(value: string | null): T | null {
-  if (!value) return null;
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return null;
-  }
-}
-
 export async function recordWorkerHeartbeat(
-  heartbeat: Omit<WorkerHeartbeat, "checkedAt" | "status" | "worker">
+  heartbeat?: Partial<WorkerHeartbeat> & { jobsProcessed?: number; error?: string }
 ) {
-  const payload: WorkerHeartbeat = {
-    ...heartbeat,
-    status: "running",
-    worker: "dm",
-    checkedAt: new Date().toISOString(),
-  };
-
-  await getRedisConnection().set(
-    WORKER_HEALTH_KEY,
-    JSON.stringify(payload),
-    "EX",
-    WORKER_HEARTBEAT_TTL_SECONDS
-  );
+  const now = new Date();
+  await prisma.processorHeartbeat.upsert({
+    where: { id: "default" },
+    create: {
+      id: "default",
+      status: heartbeat?.error ? "error" : "ok",
+      lastRunAt: now,
+      lastSuccessAt: heartbeat?.error ? undefined : now,
+      jobsProcessed: heartbeat?.jobsProcessed ?? 0,
+      lastError: heartbeat?.error ?? null,
+      updatedAt: now,
+    },
+    update: {
+      status: heartbeat?.error ? "error" : "ok",
+      lastRunAt: now,
+      lastSuccessAt: heartbeat?.error ? undefined : now,
+      jobsProcessed: { increment: heartbeat?.jobsProcessed ?? 0 },
+      lastError: heartbeat?.error ?? null,
+      updatedAt: now,
+    },
+  }).catch((err) => {
+    console.error("[WorkerHealth] Failed to record heartbeat:", err);
+  });
 }
 
 export async function getWorkerHealth(): Promise<WorkerHealth> {
-  const heartbeat = parseJson<WorkerHeartbeat>(
-    await getRedisConnection().get(WORKER_HEALTH_KEY)
-  );
+  try {
+    const record = await prisma.processorHeartbeat.findUnique({
+      where: { id: "default" },
+    });
 
-  if (!heartbeat) {
+    if (!record) {
+      return { healthy: false, heartbeat: null, ageMs: null };
+    }
+
+    const ageMs = Date.now() - record.lastRunAt.getTime();
+    const healthy = ageMs <= PROCESSOR_HEALTHY_TTL_SECONDS * 1000 && record.status !== "error";
+
+    const heartbeat: WorkerHeartbeat = {
+      status: healthy ? "running" : "idle",
+      worker: "dm",
+      checkedAt: record.lastRunAt.toISOString(),
+      jobsProcessed: record.jobsProcessed,
+    };
+
+    return {
+      healthy,
+      heartbeat,
+      ageMs,
+    };
+  } catch {
     return { healthy: false, heartbeat: null, ageMs: null };
   }
-
-  const ageMs = Date.now() - new Date(heartbeat.checkedAt).getTime();
-  return {
-    healthy: ageMs <= WORKER_HEARTBEAT_TTL_SECONDS * 1000,
-    heartbeat,
-    ageMs,
-  };
 }
 
 export async function recordWorkerAlert(alert: Omit<WorkerAlert, "createdAt">) {
-  const payload: WorkerAlert = {
-    ...alert,
-    createdAt: new Date().toISOString(),
-  };
-
-  const redis = getRedisConnection();
-  await redis.lpush(WORKER_ALERTS_KEY, JSON.stringify(payload));
-  await redis.ltrim(WORKER_ALERTS_KEY, 0, 24);
+  await prisma.operationalEvent.create({
+    data: {
+      source: "WORKER",
+      level: alert.level === "error" ? "ERROR" : "WARNING",
+      message: alert.message,
+      payload: {
+        jobId: alert.jobId,
+        instagramAccountId: alert.instagramAccountId,
+        commentId: alert.commentId,
+      },
+    },
+  }).catch(() => {});
 }
 
 export async function getWorkerAlerts(limit = 10): Promise<WorkerAlert[]> {
-  const values = await getRedisConnection().lrange(
-    WORKER_ALERTS_KEY,
-    0,
-    Math.max(0, limit - 1)
-  );
+  try {
+    const events = await prisma.operationalEvent.findMany({
+      where: {
+        source: "WORKER",
+        level: { in: ["ERROR", "WARNING"] },
+      },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    });
 
-  return values
-    .map((value) => parseJson<WorkerAlert>(value))
-    .filter((value): value is WorkerAlert => Boolean(value));
+    return events.map((event: { level: string; message: string; payload: unknown; createdAt: Date }) => {
+      const payload = event.payload as Record<string, unknown> | null;
+      return {
+        level: event.level === "ERROR" ? "error" : "warning",
+        message: event.message,
+        jobId: typeof payload?.jobId === "string" ? payload.jobId : undefined,
+        instagramAccountId: typeof payload?.instagramAccountId === "string" ? payload.instagramAccountId : undefined,
+        commentId: typeof payload?.commentId === "string" ? payload.commentId : undefined,
+        createdAt: event.createdAt.toISOString(),
+      };
+    });
+  } catch {
+    return [];
+  }
 }

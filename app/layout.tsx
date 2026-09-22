@@ -3,20 +3,22 @@ import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "OpenReply - Open source Instagram comment-to-DM automation",
+  title: "ChatLoop - Instagram Comment & Story Auto-DM Loop SaaS",
   description:
-    "A free, self-hosted ManyChat alternative. Send an Instagram DM automatically when someone comments a keyword on your post or reel, using the official Meta API.",
+    "Intelligent Instagram automation SaaS. Turn keyword comments and story replies into automated private DM loops using official Meta APIs and Supabase.",
   keywords: [
+    "ChatLoop",
     "instagram automation",
     "comment to DM",
+    "story reply automation",
     "instagram private replies",
     "social commerce",
-    "manychat alternative",
+    "micro saas",
   ],
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
-    title: "OpenReply",
+    title: "ChatLoop",
     statusBarStyle: "black-translucent",
   },
   icons: {
