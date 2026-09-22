@@ -1,11 +1,19 @@
 {
-  "name": "openreply",
+  "name": "chatloop",
   "version": "0.1.0",
   "private": true,
+  "allowScripts": {
+    "@prisma/client": true,
+    "@prisma/engines": true,
+    "prisma": true,
+    "esbuild": true,
+    "sharp": true,
+    "unrs-resolver": true
+  },
   "scripts": {
     "dev": "next dev --webpack",
-    "build": "prisma generate && next build",
-    "vercel-build": "prisma generate && prisma migrate deploy && next build",
+    "build": "prisma generate && next build --webpack",
+    "vercel-build": "prisma generate && (npx prisma migrate deploy || true) && next build --webpack",
     "start": "next start",
     "lint": "eslint",
     "db:generate": "prisma generate",
