@@ -18,7 +18,9 @@ const navItems = [
   { label: "Overview", href: "/overview" },
   { label: "Inbox", href: "/inbox" },
   { label: "Campaigns", href: "/campaigns" },
+  { label: "Content Scheduler", href: "/schedule" },
   { label: "DM Logs", href: "/logs" },
+  { label: "User Tutorial", href: "/tutorial" },
   { label: "Settings", href: "/settings" },
   { label: "Diagnostics", href: "/diagnostics" },
 ] as const;
