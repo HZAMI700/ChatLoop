@@ -15,27 +15,32 @@ function hasSessionCookie(request: NextRequest): boolean {
 }
 
 export function proxy(request: NextRequest) {
-  // Refresh Supabase session
-  const { supabaseResponse } = createClient(request);
+  try {
+    // Refresh Supabase session
+    const { supabaseResponse } = createClient(request);
 
-  const pathname = request.nextUrl.pathname;
-  const isProtected = PROTECTED_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
-  );
-  const isLogin = pathname === "/login";
-  const isAuthenticated = hasSessionCookie(request);
+    const pathname = request.nextUrl.pathname;
+    const isProtected = PROTECTED_PREFIXES.some(
+      (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+    );
+    const isLogin = pathname === "/login";
+    const isAuthenticated = hasSessionCookie(request);
 
-  if (isProtected && !isAuthenticated) {
-    const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("callbackUrl", pathname);
-    return NextResponse.redirect(loginUrl);
+    if (isProtected && !isAuthenticated) {
+      const loginUrl = new URL("/login", request.url);
+      loginUrl.searchParams.set("callbackUrl", pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+
+    if (isLogin && isAuthenticated) {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+
+    return supabaseResponse || NextResponse.next();
+  } catch (err) {
+    console.error("Proxy execution caught error:", err);
+    return NextResponse.next();
   }
-
-  if (isLogin && isAuthenticated) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
-  }
-
-  return supabaseResponse;
 }
 
 export const config = {

@@ -7,8 +7,7 @@ import { prisma } from "@/lib/db/client";
 import { ensureWorkspaceForUser } from "@/lib/workspace";
 
 export async function generateMetadata() {
-  const { t } = await getI18n();
-  return { title: t("OpenReply - Open source Instagram comment-to-DM automation") };
+  return { title: "ChatLoop - Instagram & TikTok Comment-to-DM Automation" };
 }
 
 export default async function DashboardLayout({

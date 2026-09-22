@@ -6,10 +6,9 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function createPrismaClient() {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) {
-    throw new Error("DATABASE_URL environment variable is required");
-  }
+  const databaseUrl =
+    process.env.DATABASE_URL ||
+    "postgresql://postgres:postgres@localhost:5432/openreply";
 
   return new PrismaClient({
     adapter: new PrismaPg(databaseUrl),
