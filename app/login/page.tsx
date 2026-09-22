@@ -1,138 +1,58 @@
-import { EMAIL_PROVIDER_ID, signIn } from "@/lib/auth";
-import { getI18n } from "@/lib/i18n/server";
-import { getCampaignTemplate } from "@/lib/templates/campaign-templates";
-import { DemoNotice } from "@/components/demo-notice";
-import { isPublicDemoHost } from "@/lib/env";
+import { AuthForm } from "@/components/auth-form";
+import Link from "next/link";
+import type { Metadata } from "next";
 
-const GITHUB_URL = "https://github.com/diwenne/openreply";
-const SETUP_DOCS_URL = `${GITHUB_URL}/blob/main/docs/setup.md`;
-
-export async function generateMetadata() {
-  const { t } = await getI18n();
-  return {
-    title: t("Login - OpenReply"),
-    description: t("Sign in to manage Instagram comment-to-DM campaigns."),
-  };
-}
+export const metadata: Metadata = {
+  title: "Sign In & Register - ChatLoop",
+  description: "Sign in or create your ChatLoop account to automate Instagram comments to DMs.",
+};
 
 export default async function LoginPage({
   searchParams,
 }: {
   searchParams: Promise<{
-    checkEmail?: string;
     callbackUrl?: string;
-    template?: string;
+    mode?: "signin" | "signup";
   }>;
 }) {
-  const { t } = await getI18n();
-  if (await isPublicDemoHost()) {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-6">
-        <div className="w-full max-w-md text-center">
-          <h1 className="text-2xl font-semibold text-foreground">
-            OpenReply
-          </h1>
-          <div className="panel rounded p-8 mt-8 shadow-black/40">
-            <h2 className="text-lg font-semibold text-foreground">
-              {t("Sign-in is off on this demo")}
-            </h2>
-            <p className="mt-3 text-sm leading-relaxed text-muted">
-              {t("This is the public demo — it doesn’t create real accounts or send DMs. To use OpenReply for real, clone it and run your own instance with your own Meta app and domain.")}
-            </p>
-            <a
-              href={SETUP_DOCS_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded bg-accent px-6 py-3.5 text-sm font-semibold text-white shadow-indigo-500/25 transition-all hover:shadow-indigo-500/30"
-            >
-              {t("Clone it yourself")} <span aria-hidden="true">↗</span>
-            </a>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const params = await searchParams;
-  const checkEmail = params.checkEmail === "1";
-  const selectedTemplate = getCampaignTemplate(params.template);
-  const templateCallbackUrl = selectedTemplate
-    ? `/campaigns/new?template=${selectedTemplate.slug}`
-    : null;
-  const callbackUrl = params.callbackUrl ?? templateCallbackUrl ?? "/dashboard";
-
-  async function sendMagicLink(formData: FormData) {
-    "use server";
-    await signIn(EMAIL_PROVIDER_ID, {
-      email: String(formData.get("email") ?? ""),
-      redirectTo: callbackUrl,
-    });
-  }
+  const callbackUrl = params.callbackUrl ?? "/dashboard";
+  const defaultMode = params.mode === "signup" ? "signup" : "signin";
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-6">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-semibold text-foreground">
-            OpenReply
-          </h1>
-          <p className="text-muted text-sm leading-relaxed mt-2">
-            {selectedTemplate
-              ? t("Sign in to use the {name} template.", { name: selectedTemplate.title })
-              : t("Sign in by email, then connect your Instagram professional account.")}
-          </p>
-        </div>
+    <div className="min-h-screen bg-[#F5F4FC] text-[#0F172A] font-sans antialiased relative overflow-hidden flex flex-col justify-between py-10 px-4 sm:px-6 selection:bg-[#5B45FF] selection:text-white">
+      {/* Background Ambient Glows */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+        <div className="absolute top-[-10%] left-[25%] w-[500px] h-[500px] rounded-full bg-[#818CF8]/20 blur-[130px]" />
+        <div className="absolute bottom-[-10%] right-[15%] w-[500px] h-[500px] rounded-full bg-[#C084FC]/15 blur-[140px]" />
+      </div>
 
-        <DemoNotice variant="panel" />
+      {/* Top Header */}
+      <div className="relative z-10 max-w-md w-full mx-auto flex items-center justify-between pb-6">
+        <Link href="/" className="flex items-center gap-2.5 group">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-[#5B45FF] to-[#8B5CF6] flex items-center justify-center text-white font-bold text-sm shadow-[0_4px_12px_rgba(91,69,255,0.35)]">
+            CL
+          </div>
+          <span className="font-extrabold text-lg tracking-tight text-[#111222] font-mono">
+            Chat<span className="text-[#5B45FF]">Loop</span>
+          </span>
+        </Link>
+        <Link
+          href="/"
+          className="text-xs font-semibold text-slate-500 hover:text-slate-900 transition flex items-center gap-1"
+        >
+          <span>← Back to Home</span>
+        </Link>
+      </div>
 
-        <div className="panel rounded p-8 shadow-black/40">
-          {selectedTemplate && !checkEmail && (
-            <div className="mb-5 border border-accent/20 bg-accent/10 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-accent">
-                {t("Template selected")}
-              </p>
-              <p className="mt-2 text-sm font-semibold text-foreground">
-                {selectedTemplate.title}
-              </p>
-            </div>
-          )}
+      {/* Center Auth Form */}
+      <div className="relative z-10 w-full my-auto">
+        <AuthForm callbackUrl={callbackUrl} defaultMode={defaultMode} />
+      </div>
 
-          {checkEmail ? (
-            <div className="text-center py-4">
-              <h2 className="text-lg font-semibold mb-2">{t("Check your email")}</h2>
-              <p className="text-sm text-muted">
-                {t("We sent you a secure sign-in link. Open it on this device to continue.")}
-              </p>
-            </div>
-          ) : (
-            <form action={sendMagicLink} className="space-y-5">
-              <div className="space-y-2">
-                <label
-                  htmlFor="email"
-                  className="block text-sm font-medium text-foreground"
-                >
-                  {t("Work email")}
-                </label>
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  required
-                  autoComplete="email"
-                  placeholder="you@company.com"
-                  className="w-full px-4 py-3 rounded bg-surface border border-border text-sm text-foreground placeholder:text-zinc-500 focus:border-accent/40 focus:outline-none transition-colors"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="w-full inline-flex items-center justify-center gap-2 rounded bg-accent px-6 py-3.5 text-sm font-semibold text-white shadow-indigo-500/25 transition-all hover:shadow-indigo-500/30"
-              >
-                {t("Email me a magic link")}
-              </button>
-            </form>
-          )}
-        </div>
+      {/* Bottom Footer */}
+      <div className="relative z-10 max-w-md w-full mx-auto text-center pt-6 text-xs text-slate-400">
+        <p>© {new Date().getFullYear()} ChatLoop · All rights reserved.</p>
       </div>
     </div>
   );

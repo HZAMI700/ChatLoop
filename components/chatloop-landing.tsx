@@ -15,13 +15,13 @@ interface ChatLoopLandingProps {
 
 export function ChatLoopLanding({ supabaseStatus }: ChatLoopLandingProps) {
   const [activeKeyword, setActiveKeyword] = useState<"LINK" | "VIP" | "FREE" | "DEAL">("LINK");
-  const [simulatedComment, setSimulatedComment] = useState("");
+  const [customComment, setCustomComment] = useState("");
   const [simStep, setSimStep] = useState<number>(0);
   const [isSimulating, setIsSimulating] = useState(false);
-  const [followGatePassed, setFollowGatePassed] = useState(true);
   const [liveCounter, setLiveCounter] = useState(58);
+  const [alertMessage, setAlertMessage] = useState<string | null>(null);
 
-  // Live activity pulse simulation
+  // Live activity pulse
   useEffect(() => {
     const interval = setInterval(() => {
       setLiveCounter((prev) => (prev > 90 ? 45 : prev + 1));
@@ -36,20 +36,43 @@ export function ChatLoopLanding({ supabaseStatus }: ChatLoopLandingProps) {
 
     setTimeout(() => {
       setSimStep(2); // 2: Keyword matched & Follow gate check
-    }, 600);
+    }, 500);
 
     setTimeout(() => {
       setSimStep(3); // 3: PostgreSQL Atomic Rate Limit Reserved
-    }, 1200);
+    }, 1000);
 
     setTimeout(() => {
       setSimStep(4); // 4: Meta Graph API private reply delivered
       setIsSimulating(false);
-    }, 1900);
+    }, 1600);
+  };
+
+  const handleCustomSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customComment.trim()) return;
+    const upper = customComment.trim().toUpperCase();
+    if (upper.includes("VIP")) handleSimulate("VIP");
+    else if (upper.includes("FREE")) handleSimulate("FREE");
+    else if (upper.includes("DEAL")) handleSimulate("DEAL");
+    else handleSimulate("LINK");
+  };
+
+  const showNotification = (msg: string) => {
+    setAlertMessage(msg);
+    setTimeout(() => setAlertMessage(null), 3000);
   };
 
   return (
     <div className="min-h-screen bg-[#F5F4FC] text-[#0F172A] font-sans antialiased overflow-x-hidden selection:bg-[#5B45FF] selection:text-white">
+      {/* Toast Notification */}
+      {alertMessage && (
+        <div className="fixed top-6 right-6 z-50 bg-[#0F101E] text-white px-5 py-3 rounded-2xl shadow-2xl border border-white/20 text-xs font-semibold flex items-center gap-2 animate-in fade-in slide-in-from-top-4 duration-200">
+          <span className="text-emerald-400">✓</span>
+          <span>{alertMessage}</span>
+        </div>
+      )}
+
       {/* Dynamic Ambient Background Glows */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
         <div className="absolute top-[-10%] left-[20%] w-[600px] h-[600px] rounded-full bg-gradient-to-br from-[#818CF8]/20 via-[#C084FC]/15 to-transparent blur-[120px]" />
@@ -60,7 +83,7 @@ export function ChatLoopLanding({ supabaseStatus }: ChatLoopLandingProps) {
       {/* Main Container */}
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-5 pb-24">
         {/* Navigation Bar matching screenshot */}
-        <header className="flex items-center justify-between py-3 px-6 rounded-full bg-white/70 backdrop-blur-xl border border-white/80 shadow-[0_4px_24px_rgba(99,102,241,0.06)]">
+        <header className="sticky top-4 z-40 flex items-center justify-between py-3 px-6 rounded-full bg-white/75 backdrop-blur-xl border border-white/80 shadow-[0_4px_24px_rgba(99,102,241,0.06)]">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2.5 group">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#5B45FF] to-[#8B5CF6] flex items-center justify-center text-white font-bold text-lg shadow-[0_4px_14px_rgba(91,69,255,0.4)] group-hover:scale-105 transition">
@@ -126,7 +149,7 @@ export function ChatLoopLanding({ supabaseStatus }: ChatLoopLandingProps) {
             {/* CTA Buttons */}
             <div className="flex flex-wrap items-center gap-3.5 pt-2">
               <Link
-                href="/login"
+                href="/login?mode=signup"
                 className="px-7 py-3.5 rounded-full bg-[#5B45FF] text-white font-semibold text-sm shadow-[0_8px_24px_rgba(91,69,255,0.35)] hover:bg-[#4E39EB] transition-all active:scale-95 flex items-center gap-2"
               >
                 <span>Get Started Free</span>
@@ -158,13 +181,12 @@ export function ChatLoopLanding({ supabaseStatus }: ChatLoopLandingProps) {
             </div>
           </div>
 
-          {/* Right Column: 3D Glass Cylinders & Floating Showcase (Matching Screenshot Visuals) */}
+          {/* Right Column: 3D Glass Cylinders & Floating Showcase */}
           <div className="lg:col-span-6 relative flex flex-col items-center justify-center">
             {/* 3D Glass Artwork Container */}
             <div className="relative w-full max-w-lg aspect-[4/3] flex items-center justify-center">
-              {/* Circular 3D Glass Tray & Pedestal */}
+              {/* Circular 3D Glass Tray */}
               <div className="absolute w-72 sm:w-80 h-72 sm:h-80 rounded-full border-4 border-white/60 bg-gradient-to-tr from-white/30 to-white/80 shadow-[0_20px_50px_rgba(99,102,241,0.18)] backdrop-blur-2xl flex items-center justify-center">
-                {/* Concentric glass ring */}
                 <div className="w-56 h-56 rounded-full border-2 border-white/80 bg-white/10" />
               </div>
 
@@ -188,8 +210,8 @@ export function ChatLoopLanding({ supabaseStatus }: ChatLoopLandingProps) {
                 </div>
               </div>
 
-              {/* Floating 3D Frosted Tiles (Top-Right & Top-Left from Screenshot) */}
-              <div className="absolute top-2 right-4 w-16 h-16 rounded-2xl bg-white/85 border border-white shadow-[0_10px_25px_rgba(99,102,241,0.2)] backdrop-blur-md flex items-center justify-center text-[#5B45FF] animate-bounce duration-1000">
+              {/* Floating 3D Frosted Tiles */}
+              <div className="absolute top-2 right-4 w-16 h-16 rounded-2xl bg-white/85 border border-white shadow-[0_10px_25px_rgba(99,102,241,0.2)] backdrop-blur-md flex items-center justify-center text-[#5B45FF]">
                 <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
@@ -208,7 +230,7 @@ export function ChatLoopLanding({ supabaseStatus }: ChatLoopLandingProps) {
               </div>
             </div>
 
-            {/* Dark Glossy Analytics Card below cylinders (Matching Screenshot's Dark Bottom Overlay Card) */}
+            {/* Dark Glossy Analytics Card */}
             <div className="w-full max-w-md -mt-6 bg-[#0E0F1D]/90 backdrop-blur-2xl rounded-3xl p-5 border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.35)] text-white">
               <div className="flex items-center justify-between border-b border-white/10 pb-3">
                 <div className="flex items-center gap-2">
@@ -247,7 +269,7 @@ export function ChatLoopLanding({ supabaseStatus }: ChatLoopLandingProps) {
           </div>
         </section>
 
-        {/* 4 HORIZONTAL STAT CARDS (Exact match to screenshot's 4 cards row) */}
+        {/* 4 HORIZONTAL STAT CARDS */}
         <section className="mt-14 grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
             { label: "DMs Delivered", value: "22,397+", badge: "99.8%", color: "bg-[#5B45FF]" },
@@ -272,8 +294,8 @@ export function ChatLoopLanding({ supabaseStatus }: ChatLoopLandingProps) {
           ))}
         </section>
 
-        {/* BENTO GRID (Section 2 - Exact visual architecture from screenshot) */}
-        <section id="features" className="mt-16 space-y-6">
+        {/* BENTO GRID (Section 2 - Exact visual architecture) */}
+        <section id="features" className="mt-20 space-y-6">
           <div className="text-center max-w-2xl mx-auto mb-10">
             <h2 className="text-3xl font-bold text-[#0F172A] tracking-tight">
               A Complete Instagram Growth Engine Built for Creators & Agencies
@@ -284,7 +306,7 @@ export function ChatLoopLanding({ supabaseStatus }: ChatLoopLandingProps) {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-            {/* Card 1: Left Dark Card (Private DM Automation) */}
+            {/* Card 1: Left Dark Card */}
             <div className="md:col-span-4 bg-[#0F101E] rounded-3xl p-6 border border-white/10 shadow-xl text-white flex flex-col justify-between relative overflow-hidden">
               <div className="absolute top-0 right-0 w-44 h-44 bg-[#5B45FF]/20 rounded-full blur-3xl pointer-events-none" />
 
@@ -316,7 +338,7 @@ export function ChatLoopLanding({ supabaseStatus }: ChatLoopLandingProps) {
               </div>
             </div>
 
-            {/* Card 2: Center Creator & Multi-Trigger Card (Split card with photo & copy) */}
+            {/* Card 2: Center Creator & Multi-Trigger Card */}
             <div className="md:col-span-8 bg-white/80 backdrop-blur-xl rounded-3xl p-6 border border-white shadow-[0_8px_30px_rgba(99,102,241,0.06)] grid grid-cols-1 sm:grid-cols-12 gap-6 items-center">
               {/* Creator Photo Area */}
               <div className="sm:col-span-5 rounded-2xl overflow-hidden bg-gradient-to-tr from-[#E2E8F0] to-[#F8FAFC] border border-slate-200 aspect-[4/5] relative flex items-center justify-center">
@@ -361,7 +383,10 @@ export function ChatLoopLanding({ supabaseStatus }: ChatLoopLandingProps) {
 
                 <div className="pt-2">
                   <button
-                    onClick={() => handleSimulate("FREE")}
+                    onClick={() => {
+                      handleSimulate("FREE");
+                      showNotification("Follow-gate simulation triggered for keyword FREE");
+                    }}
                     className="px-4 py-2 rounded-xl bg-[#0F172A] text-white text-xs font-semibold hover:bg-slate-800 transition"
                   >
                     Test Follow-Gate Logic
@@ -370,7 +395,7 @@ export function ChatLoopLanding({ supabaseStatus }: ChatLoopLandingProps) {
               </div>
             </div>
 
-            {/* Card 3: Bottom Left Card (Tracked Links & Clicks Funnel) */}
+            {/* Card 3: Bottom Left Card (Tracked Links) */}
             <div className="md:col-span-6 bg-white/80 backdrop-blur-xl rounded-3xl p-6 border border-white shadow-[0_8px_30px_rgba(99,102,241,0.06)] flex flex-col justify-between">
               <div>
                 <span className="text-xs font-mono font-semibold text-[#5B45FF] uppercase tracking-wider">
@@ -385,7 +410,7 @@ export function ChatLoopLanding({ supabaseStatus }: ChatLoopLandingProps) {
                 </p>
               </div>
 
-              {/* 3 Tier Pills matching bottom left in screenshot */}
+              {/* 3 Tier Pills */}
               <div className="grid grid-cols-3 gap-3 my-6">
                 {[
                   { label: "Button 1", metric: "Primary", active: true },
@@ -414,9 +439,8 @@ export function ChatLoopLanding({ supabaseStatus }: ChatLoopLandingProps) {
               </div>
             </div>
 
-            {/* Card 4: Bottom Right Dark Card (Live Supabase Queue & 3D Chart) */}
-            <div className="md:col-span-6 bg-[#0E0F1D] rounded-3xl p-6 border border-white/10 shadow-2xl text-white relative overflow-hidden flex flex-col justify-between">
-              {/* Subtle background glow */}
+            {/* Card 4: Bottom Right Dark Card (Supabase Queue) */}
+            <div id="analytics" className="md:col-span-6 bg-[#0E0F1D] rounded-3xl p-6 border border-white/10 shadow-2xl text-white relative overflow-hidden flex flex-col justify-between">
               <div className="absolute -bottom-10 -right-10 w-60 h-60 bg-[#7C3AED]/20 rounded-full blur-3xl pointer-events-none" />
 
               <div>
@@ -436,7 +460,7 @@ export function ChatLoopLanding({ supabaseStatus }: ChatLoopLandingProps) {
                       Cron-triggered serverless execution every 60s
                     </p>
                   </div>
-                  {/* Floating counter widget matching screenshot's "58" badge */}
+                  {/* Floating counter widget */}
                   <div className="px-5 py-3 rounded-2xl bg-white/10 backdrop-blur-xl border border-white/20 text-center shadow-lg">
                     <span className="text-2xl font-mono font-extrabold text-white block">
                       {liveCounter}
@@ -479,7 +503,147 @@ export function ChatLoopLanding({ supabaseStatus }: ChatLoopLandingProps) {
           </div>
         </section>
 
-        {/* INTERACTIVE SANDBOX / DEMO SECTION */}
+        {/* PIPELINE ARCHITECTURE SECTION (#pipeline) */}
+        <section id="pipeline" className="mt-20 space-y-6">
+          <div className="text-center max-w-2xl mx-auto mb-10">
+            <span className="text-xs font-mono font-semibold text-[#5B45FF] uppercase tracking-wider">
+              SERVERLESS WORKFLOW
+            </span>
+            <h2 className="text-3xl font-bold text-[#0F172A] tracking-tight mt-1">
+              End-to-End Instagram Automation Architecture
+            </h2>
+            <p className="text-sm text-[#64748B] mt-2">
+              How ChatLoop ingests events, enforces rate-limits, and executes private replies with zero daemon overhead.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white/80 backdrop-blur-xl rounded-3xl p-6 border border-white shadow-sm space-y-3">
+              <div className="w-10 h-10 rounded-2xl bg-[#5B45FF]/10 text-[#5B45FF] flex items-center justify-center font-bold text-lg">
+                1
+              </div>
+              <h4 className="text-lg font-bold text-[#0F172A]">Webhook Ingestion</h4>
+              <p className="text-xs text-[#64748B] leading-relaxed">
+                Instagram delivers comment, postback, and DM events to Vercel Next.js route handlers. Events are verified and enqueued into Supabase pgmq in &lt;15ms.
+              </p>
+            </div>
+
+            <div className="bg-white/80 backdrop-blur-xl rounded-3xl p-6 border border-white shadow-sm space-y-3">
+              <div className="w-10 h-10 rounded-2xl bg-[#7C3AED]/10 text-[#7C3AED] flex items-center justify-center font-bold text-lg">
+                2
+              </div>
+              <h4 className="text-lg font-bold text-[#0F172A]">Atomic Rate Limiting</h4>
+              <p className="text-xs text-[#64748B] leading-relaxed">
+                PostgreSQL row-level locking enforces Meta’s 750 private replies/hour cap. Overflow messages are delayed safely rather than dropped or banned.
+              </p>
+            </div>
+
+            <div className="bg-white/80 backdrop-blur-xl rounded-3xl p-6 border border-white shadow-sm space-y-3">
+              <div className="w-10 h-10 rounded-2xl bg-[#059669]/10 text-[#059669] flex items-center justify-center font-bold text-lg">
+                3
+              </div>
+              <h4 className="text-lg font-bold text-[#0F172A]">Delivery & Click Tracking</h4>
+              <p className="text-xs text-[#64748B] leading-relaxed">
+                Official Graph API delivers private DMs with tracked link buttons. When users tap buttons, ChatLoop records conversion CTR and triggers follow-up loops.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* PRICING SECTION (#pricing) */}
+        <section id="pricing" className="mt-20 space-y-6">
+          <div className="text-center max-w-2xl mx-auto mb-12">
+            <span className="text-xs font-mono font-semibold text-[#5B45FF] uppercase tracking-wider">
+              TRANSPARENT PRICING
+            </span>
+            <h2 className="text-3xl font-bold text-[#0F172A] tracking-tight mt-1">
+              Start Free. Scale with Growth.
+            </h2>
+            <p className="text-sm text-[#64748B] mt-2">
+              No hidden fees, no per-message overage charges. 100% self-hosted on your own Supabase infrastructure.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+            {/* Starter Plan */}
+            <div className="bg-white/80 backdrop-blur-xl rounded-3xl p-6 border border-white shadow-sm flex flex-col justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-[#0F172A]">Starter Loop</h3>
+                <p className="text-xs text-[#64748B] mt-1">For single creator accounts</p>
+                <div className="mt-4 mb-6">
+                  <span className="text-3xl font-bold font-mono text-[#0F172A]">$0</span>
+                  <span className="text-xs text-[#64748B]"> / forever</span>
+                </div>
+                <ul className="space-y-2.5 text-xs text-[#475569]">
+                  <li className="flex items-center gap-2">✓ 1 Instagram Business Account</li>
+                  <li className="flex items-center gap-2">✓ 3 Active Keyword Loops</li>
+                  <li className="flex items-center gap-2">✓ Meta 750/hr Rate Guard</li>
+                  <li className="flex items-center gap-2">✓ Supabase PostgreSQL Queue</li>
+                </ul>
+              </div>
+              <Link
+                href="/login?mode=signup"
+                className="mt-8 w-full py-3 text-center rounded-2xl bg-slate-100 text-[#0F172A] text-xs font-bold hover:bg-slate-200 transition"
+              >
+                Get Started Free
+              </Link>
+            </div>
+
+            {/* Pro Creator Plan (Featured) */}
+            <div className="bg-[#0F101E] rounded-3xl p-6 border border-[#5B45FF]/40 shadow-2xl text-white flex flex-col justify-between relative overflow-hidden">
+              <div className="absolute top-0 right-0 px-3 py-1 bg-[#5B45FF] text-white text-[10px] font-bold rounded-bl-xl uppercase font-mono">
+                POPULAR
+              </div>
+              <div>
+                <h3 className="text-lg font-bold">Pro Creator</h3>
+                <p className="text-xs text-slate-400 mt-1">For scaling influencers & brands</p>
+                <div className="mt-4 mb-6">
+                  <span className="text-3xl font-bold font-mono text-white">$29</span>
+                  <span className="text-xs text-slate-400"> / month</span>
+                </div>
+                <ul className="space-y-2.5 text-xs text-slate-300">
+                  <li className="flex items-center gap-2">✓ 3 Instagram Business Accounts</li>
+                  <li className="flex items-center gap-2">✓ Unlimited Keyword Automations</li>
+                  <li className="flex items-center gap-2">✓ Follow-Gate Verification Engine</li>
+                  <li className="flex items-center gap-2">✓ Tracked Link Analytics & CTR</li>
+                  <li className="flex items-center gap-2">✓ Story Mention & DM Triggers</li>
+                </ul>
+              </div>
+              <Link
+                href="/login?mode=signup"
+                className="mt-8 w-full py-3 text-center rounded-2xl bg-[#5B45FF] text-white text-xs font-bold hover:bg-[#4E39EB] transition shadow-lg shadow-[#5B45FF]/30"
+              >
+                Upgrade to Pro →
+              </Link>
+            </div>
+
+            {/* Agency Plan */}
+            <div className="bg-white/80 backdrop-blur-xl rounded-3xl p-6 border border-white shadow-sm flex flex-col justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-[#0F172A]">Agency Suite</h3>
+                <p className="text-xs text-[#64748B] mt-1">For marketing agencies & teams</p>
+                <div className="mt-4 mb-6">
+                  <span className="text-3xl font-bold font-mono text-[#0F172A]">$79</span>
+                  <span className="text-xs text-[#64748B]"> / month</span>
+                </div>
+                <ul className="space-y-2.5 text-xs text-[#475569]">
+                  <li className="flex items-center gap-2">✓ 10+ Instagram Accounts</li>
+                  <li className="flex items-center gap-2">✓ Multi-Workspace Team Roles</li>
+                  <li className="flex items-center gap-2">✓ White-Label Client Reports</li>
+                  <li className="flex items-center gap-2">✓ Priority Support & Setup</li>
+                </ul>
+              </div>
+              <Link
+                href="/login?mode=signup"
+                className="mt-8 w-full py-3 text-center rounded-2xl bg-slate-100 text-[#0F172A] text-xs font-bold hover:bg-slate-200 transition"
+              >
+                Contact Agency Team
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        {/* INTERACTIVE SANDBOX / DEMO SECTION (#demo) */}
         <section id="demo" className="mt-20 bg-white/90 backdrop-blur-2xl rounded-3xl p-8 border border-white shadow-[0_12px_40px_rgba(99,102,241,0.08)]">
           <div className="max-w-2xl mx-auto text-center mb-8">
             <span className="text-xs font-mono font-semibold text-[#5B45FF] uppercase tracking-wider">
@@ -508,6 +672,24 @@ export function ChatLoopLanding({ supabaseStatus }: ChatLoopLandingProps) {
                 </button>
               ))}
             </div>
+
+            {/* Custom Comment Input Form */}
+            <form onSubmit={handleCustomSubmit} className="mt-4 flex max-w-sm mx-auto gap-2">
+              <input
+                type="text"
+                value={customComment}
+                onChange={(e) => setCustomComment(e.target.value)}
+                placeholder="Type e.g. send me the link..."
+                className="flex-1 px-4 py-2.5 text-xs rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#5B45FF]/30"
+              />
+              <button
+                type="submit"
+                disabled={isSimulating}
+                className="px-4 py-2.5 bg-[#5B45FF] text-white text-xs font-bold rounded-xl hover:bg-[#4E39EB] disabled:opacity-50"
+              >
+                {isSimulating ? "..." : "Send"}
+              </button>
+            </form>
           </div>
 
           {/* Interactive Pipeline Steps */}
@@ -583,15 +765,23 @@ export function ChatLoopLanding({ supabaseStatus }: ChatLoopLandingProps) {
               </div>
 
               {/* Tracked Button 1 */}
-              <div className="p-2.5 rounded-xl bg-[#5B45FF] text-white text-center text-xs font-semibold shadow-md flex items-center justify-center gap-1.5 cursor-pointer hover:bg-[#4E39EB]">
+              <button
+                type="button"
+                onClick={() => showNotification("Tracked Button 1 Clicked! Redirecting through /r/[slug]...")}
+                className="w-full p-2.5 rounded-xl bg-[#5B45FF] text-white text-center text-xs font-semibold shadow-md flex items-center justify-center gap-1.5 cursor-pointer hover:bg-[#4E39EB] active:scale-95 transition"
+              >
                 <span>Open Resource Link</span>
                 <span className="text-[10px]">↗</span>
-              </div>
+              </button>
 
               {/* Tracked Button 2 */}
-              <div className="p-2 rounded-xl bg-white/10 text-slate-200 text-center text-[11px] font-medium hover:bg-white/20 cursor-pointer">
+              <button
+                type="button"
+                onClick={() => showNotification("Tracked Button 2 Clicked! Product upsell page opened.")}
+                className="w-full p-2 rounded-xl bg-white/10 text-slate-200 text-center text-[11px] font-medium hover:bg-white/20 active:scale-95 transition cursor-pointer"
+              >
                 <span>View Creator Store</span>
-              </div>
+              </button>
 
               <div className="text-[10px] text-center text-slate-400 pt-1">
                 ✓ Sent via Official Meta Graph API
