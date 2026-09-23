@@ -2,7 +2,7 @@ import { I18nProvider } from "@/lib/i18n/provider";
 import { getI18n } from "@/lib/i18n/server";
 import { redirect } from "next/navigation";
 import DashboardShell from "@/components/dashboard-shell";
-import { auth } from "@/lib/auth";
+import { getCurrentUserId, getCurrentUserEmail } from "@/lib/auth";
 import { prisma } from "@/lib/db/client";
 import { ensureWorkspaceForUser } from "@/lib/workspace";
 
@@ -16,28 +16,39 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   const { locale } = await getI18n();
-  const session = await auth();
+  const userId = await getCurrentUserId();
+  const email = await getCurrentUserEmail();
 
-  if (!session?.user?.id) {
+  if (!userId) {
     redirect("/login");
   }
 
-  const workspace = await ensureWorkspaceForUser(
-    session.user.id,
-    session.user.email
-  );
-  const accounts = await prisma.instagramAccount.findMany({
-    where: { workspaceId: workspace.id },
-    orderBy: { connectedAt: "desc" },
-    select: { username: true },
-  });
+  let workspaceName = email ? `${email.split("@")[0]}'s Workspace` : "ChatLoop Workspace";
+  let instagramUsername: string | null = null;
+  let instagramAccountCount = 0;
+
+  try {
+    const workspace = await ensureWorkspaceForUser(userId, email);
+    if (workspace) {
+      workspaceName = workspace.name;
+      const accounts = await prisma.instagramAccount.findMany({
+        where: { workspaceId: workspace.id },
+        orderBy: { connectedAt: "desc" },
+        select: { username: true },
+      });
+      instagramUsername = accounts[0]?.username ?? null;
+      instagramAccountCount = accounts.length;
+    }
+  } catch (err) {
+    console.warn("DashboardLayout workspace fetch fallback:", err);
+  }
 
   return (
     <I18nProvider locale={locale}>
       <DashboardShell
-        workspaceName={workspace.name}
-        instagramUsername={accounts[0]?.username ?? null}
-        instagramAccountCount={accounts.length}
+        workspaceName={workspaceName}
+        instagramUsername={instagramUsername}
+        instagramAccountCount={instagramAccountCount}
       >
         {children}
       </DashboardShell>

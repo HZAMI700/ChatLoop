@@ -64,22 +64,74 @@ export const authConfig = {
 export const { handlers, auth, signIn, signOut } = NextAuth(authConfig);
 
 export async function getCurrentUserId(): Promise<string | null> {
-  const session = await auth();
-  return session?.user?.id ?? null;
+  // 1. NextAuth session check
+  try {
+    const session = await auth();
+    if (session?.user?.id) return session.user.id;
+  } catch {
+    // NextAuth session not present
+  }
+
+  // 2. Supabase Auth session check
+  try {
+    const { cookies } = await import("next/headers");
+    const { createClient } = await import("@/utils/supabase/server");
+    const cookieStore = await cookies();
+    const supabase = createClient(cookieStore);
+    if (supabase && typeof supabase.auth?.getUser === "function") {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user?.id) return user.id;
+    }
+  } catch {
+    // Supabase session not present
+  }
+
+  return null;
+}
+
+export async function getCurrentUserEmail(): Promise<string | null> {
+  // 1. NextAuth check
+  try {
+    const session = await auth();
+    if (session?.user?.email) return session.user.email;
+  } catch {
+    // NextAuth not present
+  }
+
+  // 2. Supabase Auth check
+  try {
+    const { cookies } = await import("next/headers");
+    const { createClient } = await import("@/utils/supabase/server");
+    const cookieStore = await cookies();
+    const supabase = createClient(cookieStore);
+    if (supabase && typeof supabase.auth?.getUser === "function") {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user?.email) return user.email;
+    }
+  } catch {
+    // Supabase not present
+  }
+
+  return null;
 }
 
 export async function getCurrentWorkspaceId(): Promise<string | null> {
   const userId = await getCurrentUserId();
   if (!userId) return null;
 
-  const workspace = await getPrimaryWorkspace(userId);
-  if (workspace) return workspace.id;
+  try {
+    const workspace = await getPrimaryWorkspace(userId);
+    if (workspace) return workspace.id;
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { email: true },
-  });
-
-  const createdWorkspace = await ensureWorkspaceForUser(userId, user?.email);
-  return createdWorkspace.id;
+    const email = await getCurrentUserEmail();
+    const createdWorkspace = await ensureWorkspaceForUser(userId, email);
+    return createdWorkspace.id;
+  } catch (err) {
+    console.warn("Failed to get primary workspace from DB:", err);
+    return userId; // Fallback to user ID as workspace ID
+  }
 }

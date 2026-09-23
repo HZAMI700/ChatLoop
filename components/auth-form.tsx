@@ -7,20 +7,53 @@ import { useRouter } from "next/navigation";
 interface AuthFormProps {
   callbackUrl?: string;
   defaultMode?: "signin" | "signup";
+  initialError?: string;
+  initialMessage?: string;
 }
 
-export function AuthForm({ callbackUrl = "/dashboard", defaultMode = "signin" }: AuthFormProps) {
+export function AuthForm({
+  callbackUrl = "/dashboard",
+  defaultMode = "signin",
+  initialError,
+  initialMessage,
+}: AuthFormProps) {
   const [mode, setMode] = useState<"signin" | "signup">(defaultMode);
   const [authMethod, setAuthMethod] = useState<"password" | "magic-link">("password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(initialError ?? null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(initialMessage ?? null);
   const router = useRouter();
 
   const supabase = createClient();
+
+  // Listen to Supabase auth state change (detects session from magic link, token hash, etc.)
+  React.useEffect(() => {
+    if (!supabase || typeof supabase.auth?.onAuthStateChange !== "function") return;
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (session && (event === "SIGNED_IN" || event === "USER_UPDATED")) {
+          router.push(callbackUrl);
+          router.refresh();
+        }
+      }
+    );
+
+    return () => {
+      subscription?.unsubscribe();
+    };
+  }, [supabase, router, callbackUrl]);
+
+  const getCallbackUrl = () => {
+    const origin =
+      typeof window !== "undefined" && window.location.origin
+        ? window.location.origin
+        : process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+    return `${origin}/auth/callback?next=${encodeURIComponent(callbackUrl)}`;
+  };
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,16 +61,20 @@ export function AuthForm({ callbackUrl = "/dashboard", defaultMode = "signin" }:
     setErrorMsg(null);
     setSuccessMsg(null);
 
+    const redirectUrl = getCallbackUrl();
+
     try {
       if (authMethod === "magic-link") {
         const { error } = await supabase.auth.signInWithOtp({
           email,
           options: {
-            emailRedirectTo: `${window.location.origin}${callbackUrl}`,
+            emailRedirectTo: redirectUrl,
           },
         });
         if (error) throw error;
-        setSuccessMsg("Check your inbox! We sent you a secure magic link to sign in.");
+        setSuccessMsg(
+          "Check your inbox! We sent you a secure magic link. Clicking it will automatically log you in."
+        );
       } else if (mode === "signup") {
         const { data, error } = await supabase.auth.signUp({
           email,
@@ -46,7 +83,7 @@ export function AuthForm({ callbackUrl = "/dashboard", defaultMode = "signin" }:
             data: {
               full_name: fullName,
             },
-            emailRedirectTo: `${window.location.origin}${callbackUrl}`,
+            emailRedirectTo: redirectUrl,
           },
         });
         if (error) throw error;
@@ -55,7 +92,9 @@ export function AuthForm({ callbackUrl = "/dashboard", defaultMode = "signin" }:
           router.push(callbackUrl);
           router.refresh();
         } else {
-          setSuccessMsg("Account created! Check your email to confirm your registration or sign in.");
+          setSuccessMsg(
+            "Account created! Check your email to confirm your registration. Once confirmed, you will be redirected straight to your dashboard."
+          );
         }
       } else {
         // Sign In with password
@@ -71,7 +110,10 @@ export function AuthForm({ callbackUrl = "/dashboard", defaultMode = "signin" }:
         }
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "An unexpected error occurred during authentication.";
+      const message =
+        err instanceof Error
+          ? err.message
+          : "An unexpected error occurred during authentication.";
       setErrorMsg(message);
     } finally {
       setLoading(false);

@@ -4,14 +4,27 @@ import { createClient } from "@/utils/supabase/middleware";
 const PROTECTED_PREFIXES = ["/dashboard", "/automations", "/logs", "/settings"];
 
 function hasSessionCookie(request: NextRequest): boolean {
-  return (
-    request.cookies.has("authjs.session-token") ||
-    request.cookies.has("__Secure-authjs.session-token") ||
-    request.cookies.has("next-auth.session-token") ||
-    request.cookies.has("__Secure-next-auth.session-token") ||
-    request.cookies.has("sb-access-token") ||
-    request.cookies.has("sb-refresh-token")
-  );
+  try {
+    const allCookies = request.cookies.getAll();
+    const hasNextAuth =
+      request.cookies.has("authjs.session-token") ||
+      request.cookies.has("__Secure-authjs.session-token") ||
+      request.cookies.has("next-auth.session-token") ||
+      request.cookies.has("__Secure-next-auth.session-token");
+
+    const hasSupabase =
+      allCookies.some(
+        (c) =>
+          c.name.startsWith("sb-") &&
+          (c.name.includes("-auth-token") || c.name.includes("-token"))
+      ) ||
+      request.cookies.has("sb-access-token") ||
+      request.cookies.has("sb-refresh-token");
+
+    return hasNextAuth || hasSupabase;
+  } catch {
+    return false;
+  }
 }
 
 export function proxy(request: NextRequest) {

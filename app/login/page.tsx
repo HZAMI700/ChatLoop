@@ -13,6 +13,8 @@ export default async function LoginPage({
   searchParams: Promise<{
     callbackUrl?: string;
     mode?: "signin" | "signup";
+    error?: string;
+    message?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -47,7 +49,12 @@ export default async function LoginPage({
 
       {/* Center Auth Form */}
       <div className="relative z-10 w-full my-auto">
-        <AuthForm callbackUrl={callbackUrl} defaultMode={defaultMode} />
+        <AuthForm
+          callbackUrl={callbackUrl}
+          defaultMode={defaultMode}
+          initialError={params.error}
+          initialMessage={params.message}
+        />
       </div>
 
       {/* Bottom Footer */}
