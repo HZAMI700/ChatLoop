@@ -26,26 +26,42 @@ export function AuthForm({
   const [errorMsg, setErrorMsg] = useState<string | null>(initialError ?? null);
   const [successMsg, setSuccessMsg] = useState<string | null>(initialMessage ?? null);
   const router = useRouter();
+  const supabase = React.useMemo(() => createClient(), []);
 
-  const supabase = createClient();
-
-  // Listen to Supabase auth state change (detects session from magic link, token hash, etc.)
+  // Sync mode state whenever URL prop defaultMode changes
   React.useEffect(() => {
-    if (!supabase || typeof supabase.auth?.onAuthStateChange !== "function") return;
+    if (defaultMode) {
+      setMode(defaultMode);
+    }
+  }, [defaultMode]);
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (session && (event === "SIGNED_IN" || event === "USER_UPDATED")) {
-          router.push(callbackUrl);
-          router.refresh();
+  // Listen to Supabase auth state change (detects session from email link or OAuth)
+  React.useEffect(() => {
+    try {
+      const client = createClient();
+      if (!client || typeof client.auth?.onAuthStateChange !== "function") return;
+
+      const { data: { subscription } } = client.auth.onAuthStateChange(
+        (event, session) => {
+          if (session && event === "SIGNED_IN") {
+            const hasAuthTokens =
+              typeof window !== "undefined" &&
+              (window.location.hash.includes("access_token") ||
+                window.location.search.includes("code="));
+            if (hasAuthTokens) {
+              router.push(callbackUrl);
+            }
+          }
         }
-      }
-    );
+      );
 
-    return () => {
-      subscription?.unsubscribe();
-    };
-  }, [supabase, router, callbackUrl]);
+      return () => {
+        subscription?.unsubscribe();
+      };
+    } catch (e) {
+      console.warn("Auth listener warning:", e);
+    }
+  }, [router, callbackUrl]);
 
   const getCallbackUrl = () => {
     const origin =

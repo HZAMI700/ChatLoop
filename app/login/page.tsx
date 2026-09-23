@@ -7,6 +7,8 @@ export const metadata: Metadata = {
   description: "Sign in or create your ChatLoop account to automate Instagram comments to DMs.",
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function LoginPage({
   searchParams,
 }: {

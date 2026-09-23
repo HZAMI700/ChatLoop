@@ -46,7 +46,7 @@ export default function SeoPageShell({ config }: { config: SeoPageConfig }) {
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <Link
-                href="/login"
+                href="/login?mode=signup"
                 className="inline-flex items-center justify-center bg-cyan-300 px-6 py-3 text-sm font-bold text-zinc-950 transition hover:bg-cyan-200"
               >
                 {config.primaryCta}
